@@ -8,11 +8,12 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import { getRevenueBySupplier } from '@/lib/mockData';
 
-export function SupplierChart() {
-  const data = getRevenueBySupplier();
+interface SupplierChartProps {
+  data: { seller: string; revenue: number; returns: number }[];
+}
 
+export function SupplierChart({ data }: SupplierChartProps) {
   return (
     <div className="kpi-card">
       <h3 className="section-title">Revenue by Supplier</h3>
@@ -28,6 +29,7 @@ export function SupplierChart() {
             <YAxis
               tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
               axisLine={{ stroke: 'hsl(var(--border))' }}
+              tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`}
             />
             <Tooltip
               contentStyle={{
@@ -38,8 +40,7 @@ export function SupplierChart() {
               formatter={(value: number) => `₹${value.toLocaleString()}`}
             />
             <Legend />
-            <Bar dataKey="revenue" fill="hsl(var(--chart-2))" name="Revenue" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="returns" fill="hsl(var(--chart-6))" name="Returns" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="revenue" fill="hsl(142, 76%, 36%)" name="Revenue" radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

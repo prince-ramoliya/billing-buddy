@@ -14,7 +14,227 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      company_settings: {
+        Row: {
+          company_name: string
+          created_at: string
+          currency_symbol: string
+          gst_number: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          company_name?: string
+          created_at?: string
+          currency_symbol?: string
+          gst_number?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          company_name?: string
+          created_at?: string
+          currency_symbol?: string
+          gst_number?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      order_items: {
+        Row: {
+          category_id: string
+          created_at: string
+          id: string
+          order_id: string
+          price_per_piece: number
+          quantity: number
+          subtotal: number
+        }
+        Insert: {
+          category_id: string
+          created_at?: string
+          id?: string
+          order_id: string
+          price_per_piece?: number
+          quantity?: number
+          subtotal?: number
+        }
+        Update: {
+          category_id?: string
+          created_at?: string
+          id?: string
+          order_id?: string
+          price_per_piece?: number
+          quantity?: number
+          subtotal?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "product_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          created_at: string
+          id: string
+          notes: string | null
+          order_date: string
+          seller_id: string
+          total_amount: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          order_date?: string
+          seller_id: string
+          total_amount?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          notes?: string | null
+          order_date?: string
+          seller_id?: string
+          total_amount?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "sellers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      product_categories: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          price_per_piece: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          price_per_piece?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          price_per_piece?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      returns: {
+        Row: {
+          category_id: string
+          created_at: string
+          id: string
+          price_per_unit: number
+          quantity: number
+          reason: string | null
+          return_date: string
+          seller_id: string
+          total_deduction: number
+        }
+        Insert: {
+          category_id: string
+          created_at?: string
+          id?: string
+          price_per_unit?: number
+          quantity?: number
+          reason?: string | null
+          return_date?: string
+          seller_id: string
+          total_deduction?: number
+        }
+        Update: {
+          category_id?: string
+          created_at?: string
+          id?: string
+          price_per_unit?: number
+          quantity?: number
+          reason?: string | null
+          return_date?: string
+          seller_id?: string
+          total_deduction?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "returns_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "product_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "returns_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "sellers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sellers: {
+        Row: {
+          contact: string | null
+          created_at: string
+          gst_number: string | null
+          id: string
+          is_active: boolean
+          name: string
+          payment_notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          contact?: string | null
+          created_at?: string
+          gst_number?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          payment_notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          contact?: string | null
+          created_at?: string
+          gst_number?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          payment_notes?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -8,18 +8,19 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-import { getPiecesByCategory } from '@/lib/mockData';
 
 const COLORS = [
-  'hsl(var(--chart-1))',
-  'hsl(var(--chart-2))',
-  'hsl(var(--chart-3))',
-  'hsl(var(--chart-4))',
+  'hsl(217, 91%, 50%)',
+  'hsl(142, 76%, 36%)',
+  'hsl(38, 92%, 50%)',
+  'hsl(280, 68%, 50%)',
 ];
 
-export function CategoryChart() {
-  const data = getPiecesByCategory();
+interface CategoryChartProps {
+  data: { category: string; pieces: number }[];
+}
 
+export function CategoryChart({ data }: CategoryChartProps) {
   return (
     <div className="kpi-card">
       <h3 className="section-title">Pieces by Category</h3>
@@ -37,7 +38,7 @@ export function CategoryChart() {
               type="category"
               tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
               axisLine={{ stroke: 'hsl(var(--border))' }}
-              width={100}
+              width={120}
             />
             <Tooltip
               contentStyle={{

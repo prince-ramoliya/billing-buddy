@@ -7,11 +7,12 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { getOrdersOverTime } from '@/lib/mockData';
 
-export function OrdersChart() {
-  const data = getOrdersOverTime();
+interface OrdersChartProps {
+  data: { date: string; orders: number; amount: number }[];
+}
 
+export function OrdersChart({ data }: OrdersChartProps) {
   return (
     <div className="kpi-card">
       <h3 className="section-title">Orders Over Time</h3>

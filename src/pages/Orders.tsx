@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Plus, Calendar, Filter } from 'lucide-react';
+import { Plus, Calendar, Filter, Trash2 } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
-import { mockOrders, mockSellers, mockCategories } from '@/lib/mockData';
+import { useOrders, useCreateOrder, useDeleteOrder } from '@/hooks/useOrders';
+import { useSellers } from '@/hooks/useSellers';
+import { useCategories } from '@/hooks/useCategories';
 import {
   Dialog,
   DialogContent,
@@ -20,13 +22,42 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { format } from 'date-fns';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 
 export default function Orders() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedSeller, setSelectedSeller] = useState('');
-  const [orderItems, setOrderItems] = useState([
-    { categoryId: '', quantity: 0 },
-  ]);
+  const [orderDate, setOrderDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [notes, setNotes] = useState('');
+  const [orderItems, setOrderItems] = useState([{ categoryId: '', quantity: 0 }]);
+
+  const { data: sellers } = useSellers();
+  const { data: categories } = useCategories();
+  const createOrder = useCreateOrder();
+  const deleteOrder = useDeleteOrder();
+
+  // Fetch orders with items
+  const { data: ordersWithItems, isLoading } = useQuery({
+    queryKey: ['orders-with-items'],
+    queryFn: async () => {
+      const { data: orders, error: ordersError } = await supabase
+        .from('orders')
+        .select('*, sellers(*)')
+        .order('order_date', { ascending: false });
+      if (ordersError) throw ordersError;
+
+      const { data: items, error: itemsError } = await supabase
+        .from('order_items')
+        .select('*, product_categories(*)');
+      if (itemsError) throw itemsError;
+
+      return orders.map((order) => ({
+        ...order,
+        items: items.filter((item) => item.order_id === order.id),
+      }));
+    },
+  });
 
   const addOrderItem = () => {
     setOrderItems([...orderItems, { categoryId: '', quantity: 0 }]);
@@ -45,12 +76,43 @@ export default function Orders() {
   };
 
   const getItemSubtotal = (item: { categoryId: string; quantity: number }) => {
-    const category = mockCategories.find((c) => c.id === item.categoryId);
-    return category ? category.pricePerPiece * item.quantity : 0;
+    const category = categories?.find((c) => c.id === item.categoryId);
+    return category ? Number(category.price_per_piece) * item.quantity : 0;
   };
 
   const getOrderTotal = () => {
     return orderItems.reduce((sum, item) => sum + getItemSubtotal(item), 0);
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedSeller || orderItems.some((item) => !item.categoryId || item.quantity <= 0)) {
+      return;
+    }
+
+    const items = orderItems.map((item) => {
+      const category = categories?.find((c) => c.id === item.categoryId);
+      return {
+        category_id: item.categoryId,
+        quantity: item.quantity,
+        price_per_piece: Number(category?.price_per_piece || 0),
+        subtotal: getItemSubtotal(item),
+      };
+    });
+
+    await createOrder.mutateAsync({
+      order: {
+        order_date: orderDate,
+        seller_id: selectedSeller,
+        notes: notes || undefined,
+        total_amount: getOrderTotal(),
+      },
+      items,
+    });
+
+    setIsAddDialogOpen(false);
+    setSelectedSeller('');
+    setOrderItems([{ categoryId: '', quantity: 0 }]);
+    setNotes('');
   };
 
   return (
@@ -58,9 +120,7 @@ export default function Orders() {
       <div className="page-header">
         <div>
           <h1 className="page-title">Orders</h1>
-          <p className="text-muted-foreground mt-1">
-            Manage your daily orders
-          </p>
+          <p className="text-muted-foreground mt-1">Manage your daily orders</p>
         </div>
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
@@ -79,7 +139,11 @@ export default function Orders() {
                   <Label>Order Date</Label>
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-muted-foreground" />
-                    <Input type="date" defaultValue={format(new Date(), 'yyyy-MM-dd')} />
+                    <Input
+                      type="date"
+                      value={orderDate}
+                      onChange={(e) => setOrderDate(e.target.value)}
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -89,7 +153,7 @@ export default function Orders() {
                       <SelectValue placeholder="Select seller" />
                     </SelectTrigger>
                     <SelectContent>
-                      {mockSellers.map((seller) => (
+                      {sellers?.map((seller) => (
                         <SelectItem key={seller.id} value={seller.id}>
                           {seller.name}
                         </SelectItem>
@@ -103,7 +167,7 @@ export default function Orders() {
                 <Label>Products</Label>
                 <div className="space-y-3">
                   {orderItems.map((item, index) => {
-                    const category = mockCategories.find((c) => c.id === item.categoryId);
+                    const category = categories?.find((c) => c.id === item.categoryId);
                     return (
                       <div
                         key={index}
@@ -118,7 +182,7 @@ export default function Orders() {
                               <SelectValue placeholder="Category" />
                             </SelectTrigger>
                             <SelectContent>
-                              {mockCategories.map((cat) => (
+                              {categories?.map((cat) => (
                                 <SelectItem key={cat.id} value={cat.id}>
                                   {cat.name}
                                 </SelectItem>
@@ -127,7 +191,7 @@ export default function Orders() {
                           </Select>
                         </div>
                         <div className="col-span-2 text-sm text-muted-foreground">
-                          {category ? `₹${category.pricePerPiece}/pc` : '-'}
+                          {category ? `₹${category.price_per_piece}/pc` : '-'}
                         </div>
                         <div className="col-span-2">
                           <Input
@@ -163,6 +227,15 @@ export default function Orders() {
                 </Button>
               </div>
 
+              <div className="space-y-2">
+                <Label>Notes (Optional)</Label>
+                <Input
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Any notes for this order..."
+                />
+              </div>
+
               <div className="flex justify-between items-center pt-4 border-t">
                 <span className="text-lg font-semibold">Order Total</span>
                 <span className="text-xl font-bold text-primary">
@@ -174,8 +247,8 @@ export default function Orders() {
                 <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={() => setIsAddDialogOpen(false)}>
-                  Save Order
+                <Button onClick={handleSubmit} disabled={createOrder.isPending}>
+                  {createOrder.isPending ? 'Saving...' : 'Save Order'}
                 </Button>
               </div>
             </div>
@@ -183,70 +256,66 @@ export default function Orders() {
         </Dialog>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-3 mb-6">
-        <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <Input type="date" className="w-40" />
-        </div>
-        <Select>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="All Sellers" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Sellers</SelectItem>
-            {mockSellers.map((seller) => (
-              <SelectItem key={seller.id} value={seller.id}>
-                {seller.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
       {/* Orders Table */}
       <div className="bg-card rounded-md border shadow-sm overflow-hidden">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Seller</th>
-              <th>Items</th>
-              <th className="numeric">Total Pieces</th>
-              <th className="numeric">Amount</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {mockOrders.map((order) => (
-              <tr key={order.id}>
-                <td>{format(order.orderDate, 'dd MMM yyyy')}</td>
-                <td className="font-medium">{order.sellerName}</td>
-                <td>
-                  <div className="flex flex-wrap gap-1">
-                    {order.items.map((item, idx) => (
-                      <span
-                        key={idx}
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-muted"
-                      >
-                        {item.categoryName} × {item.quantity}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-                <td className="numeric">
-                  {order.items.reduce((sum, item) => sum + item.quantity, 0)}
-                </td>
-                <td className="numeric font-semibold">
-                  ₹{order.totalAmount.toLocaleString()}
-                </td>
-                <td className="text-muted-foreground text-sm">
-                  {order.notes || '-'}
-                </td>
+        {isLoading ? (
+          <div className="p-8 text-center text-muted-foreground">Loading orders...</div>
+        ) : ordersWithItems?.length === 0 ? (
+          <div className="p-8 text-center text-muted-foreground">
+            No orders yet. Click "Add Order" to create one.
+          </div>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Seller</th>
+                <th>Items</th>
+                <th className="numeric">Total Pieces</th>
+                <th className="numeric">Amount</th>
+                <th>Notes</th>
+                <th className="w-16">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {ordersWithItems?.map((order) => (
+                <tr key={order.id}>
+                  <td>{format(new Date(order.order_date), 'dd MMM yyyy')}</td>
+                  <td className="font-medium">{order.sellers?.name}</td>
+                  <td>
+                    <div className="flex flex-wrap gap-1">
+                      {order.items.map((item: any, idx: number) => (
+                        <span
+                          key={idx}
+                          className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-muted"
+                        >
+                          {item.product_categories?.name} × {item.quantity}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="numeric">
+                    {order.items.reduce((sum: number, item: any) => sum + item.quantity, 0)}
+                  </td>
+                  <td className="numeric font-semibold">
+                    ₹{Number(order.total_amount).toLocaleString()}
+                  </td>
+                  <td className="text-muted-foreground text-sm">{order.notes || '-'}</td>
+                  <td>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => deleteOrder.mutate(order.id)}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </AppLayout>
   );
