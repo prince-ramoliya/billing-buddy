@@ -10,7 +10,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Receipt,
+  Waves,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -39,11 +39,11 @@ export function AppSidebar() {
       <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
         <div className="flex items-center gap-3 overflow-hidden">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-            <Receipt className="h-4 w-4 text-primary-foreground" />
+            <Waves className="h-4 w-4 text-primary-foreground" />
           </div>
           {!collapsed && (
             <span className="whitespace-nowrap font-semibold text-sidebar-foreground">
-              Smart Billing
+              WorldWave
             </span>
           )}
         </div>
