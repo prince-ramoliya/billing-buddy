@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import { Plus, Calendar, Filter, Trash2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Calendar, Trash2, Pencil } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Button } from '@/components/ui/button';
-import { useOrders, useCreateOrder, useDeleteOrder } from '@/hooks/useOrders';
+import { useCreateOrder, useDeleteOrder, useUpdateOrder } from '@/hooks/useOrders';
 import { useSellers } from '@/hooks/useSellers';
 import { useCategories } from '@/hooks/useCategories';
 import {
@@ -23,21 +23,35 @@ import {
 } from '@/components/ui/select';
 import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+
+interface OrderFormData {
+  id?: string;
+  selectedSeller: string;
+  orderDate: string;
+  notes: string;
+  orderItems: { categoryId: string; quantity: number }[];
+}
+
+const initialFormData: OrderFormData = {
+  selectedSeller: '',
+  orderDate: format(new Date(), 'yyyy-MM-dd'),
+  notes: '',
+  orderItems: [{ categoryId: '', quantity: 0 }],
+};
 
 export default function Orders() {
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [selectedSeller, setSelectedSeller] = useState('');
-  const [orderDate, setOrderDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [notes, setNotes] = useState('');
-  const [orderItems, setOrderItems] = useState([{ categoryId: '', quantity: 0 }]);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [formData, setFormData] = useState<OrderFormData>(initialFormData);
+  const [isEditing, setIsEditing] = useState(false);
 
+  const queryClient = useQueryClient();
   const { data: sellers } = useSellers();
   const { data: categories } = useCategories();
   const createOrder = useCreateOrder();
+  const updateOrder = useUpdateOrder();
   const deleteOrder = useDeleteOrder();
 
-  // Fetch orders with items
   const { data: ordersWithItems, isLoading } = useQuery({
     queryKey: ['orders-with-items'],
     queryFn: async () => {
@@ -59,19 +73,50 @@ export default function Orders() {
     },
   });
 
+  const resetForm = () => {
+    setFormData(initialFormData);
+    setIsEditing(false);
+  };
+
+  const openAddDialog = () => {
+    resetForm();
+    setIsDialogOpen(true);
+  };
+
+  const openEditDialog = (order: any) => {
+    setFormData({
+      id: order.id,
+      selectedSeller: order.seller_id,
+      orderDate: order.order_date,
+      notes: order.notes || '',
+      orderItems: order.items.map((item: any) => ({
+        categoryId: item.category_id,
+        quantity: item.quantity,
+      })),
+    });
+    setIsEditing(true);
+    setIsDialogOpen(true);
+  };
+
   const addOrderItem = () => {
-    setOrderItems([...orderItems, { categoryId: '', quantity: 0 }]);
+    setFormData({
+      ...formData,
+      orderItems: [...formData.orderItems, { categoryId: '', quantity: 0 }],
+    });
   };
 
   const updateOrderItem = (index: number, field: string, value: string | number) => {
-    const updated = [...orderItems];
+    const updated = [...formData.orderItems];
     updated[index] = { ...updated[index], [field]: value };
-    setOrderItems(updated);
+    setFormData({ ...formData, orderItems: updated });
   };
 
   const removeOrderItem = (index: number) => {
-    if (orderItems.length > 1) {
-      setOrderItems(orderItems.filter((_, i) => i !== index));
+    if (formData.orderItems.length > 1) {
+      setFormData({
+        ...formData,
+        orderItems: formData.orderItems.filter((_, i) => i !== index),
+      });
     }
   };
 
@@ -81,15 +126,15 @@ export default function Orders() {
   };
 
   const getOrderTotal = () => {
-    return orderItems.reduce((sum, item) => sum + getItemSubtotal(item), 0);
+    return formData.orderItems.reduce((sum, item) => sum + getItemSubtotal(item), 0);
   };
 
   const handleSubmit = async () => {
-    if (!selectedSeller || orderItems.some((item) => !item.categoryId || item.quantity <= 0)) {
+    if (!formData.selectedSeller || formData.orderItems.some((item) => !item.categoryId || item.quantity <= 0)) {
       return;
     }
 
-    const items = orderItems.map((item) => {
+    const items = formData.orderItems.map((item) => {
       const category = categories?.find((c) => c.id === item.categoryId);
       return {
         category_id: item.categoryId,
@@ -99,20 +144,21 @@ export default function Orders() {
       };
     });
 
-    await createOrder.mutateAsync({
-      order: {
-        order_date: orderDate,
-        seller_id: selectedSeller,
-        notes: notes || undefined,
-        total_amount: getOrderTotal(),
-      },
-      items,
-    });
+    const orderData = {
+      order_date: formData.orderDate,
+      seller_id: formData.selectedSeller,
+      notes: formData.notes || undefined,
+      total_amount: getOrderTotal(),
+    };
 
-    setIsAddDialogOpen(false);
-    setSelectedSeller('');
-    setOrderItems([{ categoryId: '', quantity: 0 }]);
-    setNotes('');
+    if (isEditing && formData.id) {
+      await updateOrder.mutateAsync({ orderId: formData.id, order: orderData, items });
+    } else {
+      await createOrder.mutateAsync({ order: orderData, items });
+    }
+
+    setIsDialogOpen(false);
+    resetForm();
   };
 
   return (
@@ -122,16 +168,16 @@ export default function Orders() {
           <h1 className="page-title">Orders</h1>
           <p className="text-muted-foreground mt-1">Manage your daily orders</p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
+            <Button onClick={openAddDialog} className="group transition-all duration-200 hover:scale-105">
+              <Plus className="mr-2 h-4 w-4 transition-transform group-hover:rotate-90" />
               Add Order
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Add New Order</DialogTitle>
+              <DialogTitle>{isEditing ? 'Edit Order' : 'Add New Order'}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
@@ -141,14 +187,14 @@ export default function Orders() {
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                     <Input
                       type="date"
-                      value={orderDate}
-                      onChange={(e) => setOrderDate(e.target.value)}
+                      value={formData.orderDate}
+                      onChange={(e) => setFormData({ ...formData, orderDate: e.target.value })}
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label>Seller</Label>
-                  <Select value={selectedSeller} onValueChange={setSelectedSeller}>
+                  <Select value={formData.selectedSeller} onValueChange={(val) => setFormData({ ...formData, selectedSeller: val })}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select seller" />
                     </SelectTrigger>
@@ -166,12 +212,12 @@ export default function Orders() {
               <div className="space-y-2">
                 <Label>Products</Label>
                 <div className="space-y-3">
-                  {orderItems.map((item, index) => {
+                  {formData.orderItems.map((item, index) => {
                     const category = categories?.find((c) => c.id === item.categoryId);
                     return (
                       <div
                         key={index}
-                        className="grid grid-cols-12 gap-2 items-center p-3 bg-muted rounded-md"
+                        className="grid grid-cols-12 gap-2 items-center p-3 bg-muted rounded-md animate-fade-in"
                       >
                         <div className="col-span-4">
                           <Select
@@ -212,7 +258,7 @@ export default function Orders() {
                             variant="ghost"
                             size="sm"
                             onClick={() => removeOrderItem(index)}
-                            className="text-destructive hover:text-destructive"
+                            className="text-destructive hover:text-destructive transition-transform hover:scale-110"
                           >
                             ×
                           </Button>
@@ -221,7 +267,7 @@ export default function Orders() {
                     );
                   })}
                 </div>
-                <Button variant="outline" size="sm" onClick={addOrderItem}>
+                <Button variant="outline" size="sm" onClick={addOrderItem} className="transition-all hover:scale-105">
                   <Plus className="mr-2 h-3 w-3" />
                   Add Product
                 </Button>
@@ -230,8 +276,8 @@ export default function Orders() {
               <div className="space-y-2">
                 <Label>Notes (Optional)</Label>
                 <Input
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                   placeholder="Any notes for this order..."
                 />
               </div>
@@ -244,11 +290,11 @@ export default function Orders() {
               </div>
 
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                <Button variant="outline" onClick={() => { setIsDialogOpen(false); resetForm(); }}>
                   Cancel
                 </Button>
-                <Button onClick={handleSubmit} disabled={createOrder.isPending}>
-                  {createOrder.isPending ? 'Saving...' : 'Save Order'}
+                <Button onClick={handleSubmit} disabled={createOrder.isPending || updateOrder.isPending}>
+                  {(createOrder.isPending || updateOrder.isPending) ? 'Saving...' : isEditing ? 'Update Order' : 'Save Order'}
                 </Button>
               </div>
             </div>
@@ -274,12 +320,12 @@ export default function Orders() {
                 <th className="numeric">Total Pieces</th>
                 <th className="numeric">Amount</th>
                 <th>Notes</th>
-                <th className="w-16">Actions</th>
+                <th className="w-24">Actions</th>
               </tr>
             </thead>
             <tbody>
               {ordersWithItems?.map((order) => (
-                <tr key={order.id}>
+                <tr key={order.id} className="group">
                   <td>{format(new Date(order.order_date), 'dd MMM yyyy')}</td>
                   <td className="font-medium">{order.sellers?.name}</td>
                   <td>
@@ -302,14 +348,24 @@ export default function Orders() {
                   </td>
                   <td className="text-muted-foreground text-sm">{order.notes || '-'}</td>
                   <td>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => deleteOrder.mutate(order.id)}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEditDialog(order)}
+                        className="text-primary hover:text-primary transition-transform hover:scale-110"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteOrder.mutate(order.id)}
+                        className="text-destructive hover:text-destructive transition-transform hover:scale-110"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}

@@ -8,6 +8,7 @@ export interface Seller {
   payment_notes: string | null;
   is_active: boolean;
   created_at: string;
+  user_id?: string;
 }
 
 export interface ProductCategory {
@@ -15,6 +16,7 @@ export interface ProductCategory {
   name: string;
   price_per_piece: number;
   is_active: boolean;
+  user_id?: string;
 }
 
 export interface Order {
@@ -24,6 +26,7 @@ export interface Order {
   notes: string | null;
   total_amount: number;
   created_at: string;
+  user_id?: string;
   sellers?: Seller;
 }
 
@@ -47,6 +50,7 @@ export interface Return {
   total_deduction: number;
   reason: string | null;
   created_at: string;
+  user_id?: string;
   sellers?: Seller;
   product_categories?: ProductCategory;
 }
@@ -56,6 +60,14 @@ export interface CompanySettings {
   company_name: string;
   gst_number: string | null;
   currency_symbol: string;
+  user_id?: string;
+}
+
+// Helper to get current user ID
+async function getCurrentUserId(): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  return user.id;
 }
 
 // Sellers API
@@ -69,10 +81,11 @@ export const sellersApi = {
     return data as Seller[];
   },
 
-  async create(seller: Omit<Seller, 'id' | 'created_at'>) {
+  async create(seller: Omit<Seller, 'id' | 'created_at' | 'user_id'>) {
+    const user_id = await getCurrentUserId();
     const { data, error } = await supabase
       .from('sellers')
-      .insert(seller)
+      .insert({ ...seller, user_id })
       .select()
       .single();
     if (error) throw error;
@@ -107,10 +120,11 @@ export const categoriesApi = {
     return data as ProductCategory[];
   },
 
-  async create(category: Omit<ProductCategory, 'id'>) {
+  async create(category: Omit<ProductCategory, 'id' | 'user_id'>) {
+    const user_id = await getCurrentUserId();
     const { data, error } = await supabase
       .from('product_categories')
-      .insert(category)
+      .insert({ ...category, user_id })
       .select()
       .single();
     if (error) throw error;
@@ -166,9 +180,10 @@ export const ordersApi = {
     order: { order_date: string; seller_id: string; notes?: string; total_amount: number },
     items: { category_id: string; quantity: number; price_per_piece: number; subtotal: number }[]
   ) {
+    const user_id = await getCurrentUserId();
     const { data: newOrder, error: orderError } = await supabase
       .from('orders')
-      .insert(order)
+      .insert({ ...order, user_id })
       .select()
       .single();
     if (orderError) throw orderError;
@@ -182,6 +197,34 @@ export const ordersApi = {
     if (itemsError) throw itemsError;
 
     return newOrder as Order;
+  },
+
+  async update(
+    orderId: string,
+    order: { order_date: string; seller_id: string; notes?: string; total_amount: number },
+    items: { category_id: string; quantity: number; price_per_piece: number; subtotal: number }[]
+  ) {
+    // Update order
+    const { data: updatedOrder, error: orderError } = await supabase
+      .from('orders')
+      .update(order)
+      .eq('id', orderId)
+      .select()
+      .single();
+    if (orderError) throw orderError;
+
+    // Delete existing items and insert new ones
+    await supabase.from('order_items').delete().eq('order_id', orderId);
+
+    const orderItems = items.map((item) => ({
+      ...item,
+      order_id: orderId,
+    }));
+
+    const { error: itemsError } = await supabase.from('order_items').insert(orderItems);
+    if (itemsError) throw itemsError;
+
+    return updatedOrder as Order;
   },
 
   async delete(id: string) {
@@ -201,10 +244,22 @@ export const returnsApi = {
     return data as Return[];
   },
 
-  async create(returnData: Omit<Return, 'id' | 'created_at' | 'sellers' | 'product_categories'>) {
+  async create(returnData: Omit<Return, 'id' | 'created_at' | 'sellers' | 'product_categories' | 'user_id'>) {
+    const user_id = await getCurrentUserId();
     const { data, error } = await supabase
       .from('returns')
-      .insert(returnData)
+      .insert({ ...returnData, user_id })
+      .select()
+      .single();
+    if (error) throw error;
+    return data as Return;
+  },
+
+  async update(id: string, returnData: Partial<Return>) {
+    const { data, error } = await supabase
+      .from('returns')
+      .update(returnData)
+      .eq('id', id)
       .select()
       .single();
     if (error) throw error;
@@ -230,6 +285,7 @@ export const settingsApi = {
   },
 
   async update(settings: Partial<CompanySettings>) {
+    const user_id = await getCurrentUserId();
     const existing = await settingsApi.get();
     if (existing) {
       const { data, error } = await supabase
@@ -243,7 +299,7 @@ export const settingsApi = {
     } else {
       const { data, error } = await supabase
         .from('company_settings')
-        .insert(settings)
+        .insert({ ...settings, user_id })
         .select()
         .single();
       if (error) throw error;
@@ -355,10 +411,6 @@ export const dashboardApi = {
         supplierRevenue[name] = { revenue: 0, returns: 0 };
       }
       supplierRevenue[name].revenue += Number(order.total_amount);
-    });
-    returns?.forEach((ret) => {
-      // We need to match by seller_id but we don't have seller name here
-      // For simplicity, aggregate all returns
     });
 
     const revenueBySupplier = Object.entries(supplierRevenue).map(([seller, data]) => ({
