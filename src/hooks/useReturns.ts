@@ -43,3 +43,21 @@ export function useDeleteReturn() {
     },
   });
 }
+
+export function useUpdateReturn() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: ({ id, returnData }: { id: string; returnData: Partial<Return> }) =>
+      returnsApi.update(id, returnData),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['returns'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast({ title: 'Return updated successfully' });
+    },
+    onError: (error) => {
+      toast({ title: 'Error updating return', description: error.message, variant: 'destructive' });
+    },
+  });
+}
